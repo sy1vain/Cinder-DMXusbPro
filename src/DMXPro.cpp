@@ -119,7 +119,7 @@ void DMXPro::sendDMXData()
 {
 	while(mSerial) 
     {
-		boost::unique_lock<boost::mutex> dataLock(mDMXDataMutex);			// get DMX packet UNIQUE lock 
+		std::unique_lock<std::mutex> dataLock(mDMXDataMutex);			// get DMX packet UNIQUE lock
 		mSerial->writeBytes(mDMXPacket, DMXPRO_PACKET_SIZE);                // send data        
 		dataLock.unlock();													// unlock data
 		ci::sleep( mThreadSleepFor );
@@ -148,7 +148,7 @@ void DMXPro::setValue(int value, int channel)
 	}
     // DMX channels start form byte [5] and end at byte [DMXPRO_PACKET_SIZE-2], last byte is EOT(0xE7)        
 	value = math<int>::clamp(value, 0, 255);
-	boost::unique_lock<boost::mutex> dataLock(mDMXDataMutex);			// get DMX packet UNIQUE lock 
+	std::unique_lock<std::mutex> dataLock(mDMXDataMutex);			// get DMX packet UNIQUE lock
 	mDMXPacket[ 5 + channel ] = value;                                  // update value
 	dataLock.unlock();													// unlock mutex
 }
