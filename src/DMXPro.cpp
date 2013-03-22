@@ -35,6 +35,11 @@ DMXPro::~DMXPro()
     
     delete []mDMXPacket;
     
+    //wait for the thread
+    if(mThread && mThread->joinable()){
+        mThread->join();
+    }
+    
     console() << "shutdown DMXPro" << endl;
 }
 
@@ -91,7 +96,9 @@ void DMXPro::initSerial(bool initWithZeros)
         console() << "DMXPro > There was an error initializing the usb DMX device" << endl;
 		mSerial = NULL;
 	}
-	thread sendDMXDataThread( &DMXPro::sendDMXData, this);				// start thread to send data at the specific DMX_FRAME_RATE 
+    
+    // start thread to send data at the specific DMX_FRAME_RATE
+    mThread = std::shared_ptr<std::thread>( new std::thread(&DMXPro::sendDMXData, this) );			
 }
 
 
@@ -120,8 +127,11 @@ void DMXPro::sendDMXData()
 	while(mSerial) 
     {
 		std::unique_lock<std::mutex> dataLock(mDMXDataMutex);			// get DMX packet UNIQUE lock
-		mSerial->writeBytes(mDMXPacket, DMXPRO_PACKET_SIZE);                // send data        
-		dataLock.unlock();													// unlock data
+        if(mNeedsSending){
+            mSerial->writeBytes(mDMXPacket, DMXPRO_PACKET_SIZE);                // send data
+            mNeedsSending = false;
+        }
+        dataLock.unlock();													// unlock data
 		ci::sleep( mThreadSleepFor );
 	}
     console() << "DMXPro > sendDMXData() thread exited!" << endl;
@@ -141,15 +151,17 @@ Serial::Device DMXPro::findDeviceByPathContains( const string &searchString)
 
 void DMXPro::setValue(int value, int channel) 
 {    
-	if ( channel < 0 || channel > DMXPRO_PACKET_SIZE-2 )
+	if ( channel < 1 || channel > DMXPRO_PACKET_SIZE-2 )
 	{
         console() << "DMXPro > invalid DMX channel: " << channel << endl;
         return;
 	}
-    // DMX channels start form byte [5] and end at byte [DMXPRO_PACKET_SIZE-2], last byte is EOT(0xE7)        
+    // DMX channels start from byte [5] and end at byte [DMXPRO_PACKET_SIZE-2], last byte is EOT(0xE7)
+    //but we start at the 1st channel, so 4+channel
 	value = math<int>::clamp(value, 0, 255);
 	std::unique_lock<std::mutex> dataLock(mDMXDataMutex);			// get DMX packet UNIQUE lock
-	mDMXPacket[ 5 + channel ] = value;                                  // update value
+	mDMXPacket[ 4 + channel ] = value;                                  // update value
+    mNeedsSending = true;                                                    //mark the data as changed
 	dataLock.unlock();													// unlock mutex
 }
 
@@ -158,5 +170,6 @@ void DMXPro::setZeros()
 {
     for (int i=5; i < DMXPRO_PACKET_SIZE-2; i++)                        // DMX channels start form byte [5] and end at byte [DMXPRO_PACKET_SIZE-2], last byte is EOT(0xE7)
 		mDMXPacket[i] = 0;
+    mNeedsSending = true;
 }
 
