@@ -10,31 +10,25 @@ using namespace ci::app;
 using namespace std;
 
 
-DMXPro::DMXPro( const string &serialDevicePath ) : mDMXPacket(NULL), mSerialDevicePath(serialDevicePath), mSerial(NULL)
+DMXPro::DMXPro( const string &serialDevicePath ) : mSerialDevicePath(serialDevicePath), mSerial(NULL)
 {	
 	mThreadSleepFor = 1000 / DMXPRO_FRAME_RATE;
     
 	init();
-	
 	setZeros();
-
 	console() << "starting DMX" << std::endl;
 }
 
 
 DMXPro::~DMXPro()
 {
-	
 	shutdown(true);
     
     //wait for the thread
     if(mThread && mThread->joinable()){
         mThread->join();
     }
-    /*
-    delete []mDMXPacket;
     
-    console() << "shutdown DMXPro" << endl;*/
 }
 
 void DMXPro::shutdown(bool send_zeros)
@@ -47,11 +41,10 @@ void DMXPro::shutdown(bool send_zeros)
 		
 		ci::sleep( mThreadSleepFor*2 );
 		mSerial->flush();	
-		delete mSerial;
-		mSerial = NULL;
+		
+		mSerial = std::shared_ptr<ci::Serial>();
 		ci::sleep(50);	
 	}
-    console() << "DMXPro > shutdown!" << endl;
 }
 
 
@@ -75,15 +68,14 @@ void DMXPro::initSerial(bool initWithZeros)
 			ci::sleep(100);	
 		}
 		mSerial->flush();	
-		delete mSerial;
-		mSerial = NULL;
+		mSerial = std::shared_ptr<ci::Serial>();
 		ci::sleep(50);	
 	}
 	
 	try 
     {
 		Serial::Device dev = Serial::findDeviceByNameContains(mSerialDevicePath);
-		mSerial = new Serial(dev, DMXPRO_BAUD_RATE);
+		mSerial = std::shared_ptr<ci::Serial>(new ci::Serial(dev, DMXPRO_BAUD_RATE));
         console() << "DMXPro > Connected to usb DMX interface: " << dev.getName() << endl;
 	}
 	catch( ... ) 
@@ -93,17 +85,15 @@ void DMXPro::initSerial(bool initWithZeros)
 	}
     
     // start thread to send data at the specific DMX_FRAME_RATE
-    mThread = std::shared_ptr<std::thread>( new std::thread(&DMXPro::sendDMXData, this) );			
+	if(mSerial){
+		mThread = std::shared_ptr<std::thread>( new std::thread(&DMXPro::sendDMXData, this) );
+	}
 }
 
 
 void DMXPro::initDMX()
 {
-	delete []mDMXPacket;
-	mDMXPacket	= NULL;
-	mDMXPacket	= new unsigned char[DMXPRO_PACKET_SIZE];
-    
-    // LAST 4 dmx channels seem not to be working, 508-511 !!!
+	// LAST 4 dmx channels seem not to be working, 508-511 !!!
     
     for (int i=0; i < DMXPRO_PACKET_SIZE; i++)                      // initialize all channels with zeros, data starts from [5]
 		mDMXPacket[i] = 0;
@@ -132,7 +122,6 @@ void DMXPro::sendDMXData()
 		}
    		ci::sleep( mThreadSleepFor );
 	}
-    console() << "DMXPro > sendDMXData() thread exited!" << endl;
 }
 
 
@@ -146,10 +135,11 @@ void DMXPro::setValue(int value, int channel)
     // DMX channels start from byte [5] and end at byte [DMXPRO_PACKET_SIZE-2], last byte is EOT(0xE7)
     //but we start at the 1st channel, so 4+channel
 	value = math<int>::clamp(value, 0, 255);
-	std::unique_lock<std::mutex> dataLock(mDMXDataMutex);			// get DMX packet UNIQUE lock
-	mDMXPacket[ 4 + channel ] = value;                                  // update value
-    mNeedsSending = true;                                                    //mark the data as changed
-	dataLock.unlock();													// unlock mutex
+	{
+	std::lock_guard<std::mutex> dataLock(mDMXDataMutex);			// get DMX packet UNIQUE lock
+		mDMXPacket[ 4 + channel ] = value;                                  // update value
+		mNeedsSending = true;                                                    //mark the data as changed
+	}
 }
 
 
