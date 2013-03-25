@@ -17,34 +17,29 @@ DMXPro::DMXPro( const string &serialDevicePath ) : mDMXPacket(NULL), mSerialDevi
 	init();
 	
 	setZeros();
+
+	console() << "starting DMX" << std::endl;
 }
 
 
 DMXPro::~DMXPro()
 {
-    setZeros();
-    
-    ci::sleep(50);	
-    
-    if ( mSerial )
-    {
-        mSerial->flush();
-        delete mSerial;
-        mSerial = NULL;
-    }
-    
-    delete []mDMXPacket;
+	
+	shutdown(true);
     
     //wait for the thread
     if(mThread && mThread->joinable()){
         mThread->join();
     }
+    /*
+    delete []mDMXPacket;
     
-    console() << "shutdown DMXPro" << endl;
+    console() << "shutdown DMXPro" << endl;*/
 }
 
 void DMXPro::shutdown(bool send_zeros)
 {
+	std::lock_guard<std::mutex> dataLock(mDMXDataMutex);
 	if ( mSerial )
 	{
 		if (send_zeros)
@@ -87,7 +82,7 @@ void DMXPro::initSerial(bool initWithZeros)
 	
 	try 
     {
-		Serial::Device dev = findDeviceByPathContains(mSerialDevicePath);
+		Serial::Device dev = Serial::findDeviceByNameContains(mSerialDevicePath);
 		mSerial = new Serial(dev, DMXPRO_BAUD_RATE);
         console() << "DMXPro > Connected to usb DMX interface: " << dev.getName() << endl;
 	}
@@ -124,28 +119,20 @@ void DMXPro::initDMX()
 
 void DMXPro::sendDMXData() 
 {
-	while(mSerial) 
+	while(true) 
     {
-		std::unique_lock<std::mutex> dataLock(mDMXDataMutex);			// get DMX packet UNIQUE lock
-        if(mNeedsSending){
-            mSerial->writeBytes(mDMXPacket, DMXPRO_PACKET_SIZE);                // send data
-            mNeedsSending = false;
-        }
-        dataLock.unlock();													// unlock data
-		ci::sleep( mThreadSleepFor );
+		{
+		std::lock_guard<std::mutex> dataLock(mDMXDataMutex);			// get DMX packet UNIQUE lock
+			if(!mSerial) break;
+
+			if(mNeedsSending){
+				mSerial->writeBytes(mDMXPacket, DMXPRO_PACKET_SIZE);                // send data
+				mNeedsSending = false;
+			}
+		}
+   		ci::sleep( mThreadSleepFor );
 	}
     console() << "DMXPro > sendDMXData() thread exited!" << endl;
-}
-
-
-Serial::Device DMXPro::findDeviceByPathContains( const string &searchString) 
-{
-	const std::vector<Serial::Device> &devices = Serial::getDevices();
-	for( std::vector<Serial::Device>::const_iterator deviceIt = devices.begin(); deviceIt != devices.end(); ++deviceIt ) {
-		if( deviceIt->getPath().find( searchString ) != std::string::npos )
-			return *deviceIt;
-	}
-	return Serial::Device();
 }
 
 

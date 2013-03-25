@@ -6,6 +6,7 @@
 
 #include "cinder/Thread.h"
 #include "cinder/Serial.h"
+#include "cinder/app/App.h"
 
 
 #define DMXPRO_START_MSG		0x7E		// Start of message delimiter
@@ -30,14 +31,6 @@ public:
 
 	void init(bool initWithZeros = true);
 
-	ci::Serial::Device findDeviceByPathContains( const std::string &searchString);
-
-	static void listDevices() 
-    {
-		const std::vector<ci::Serial::Device> &devices( ci::Serial::getDevices(true) );
-		for( std::vector<ci::Serial::Device>::const_iterator deviceIt = devices.begin(); deviceIt != devices.end(); ++deviceIt ) 
-            ci::app::console() << "DMX usb pro > List serial devices: " + deviceIt->getPath() << std::endl;
-	}
 
 	void	setZeros();
 	
