@@ -33,17 +33,21 @@ DMXPro::~DMXPro()
 
 void DMXPro::shutdown(bool send_zeros)
 {
-	std::lock_guard<std::mutex> dataLock(mDMXDataMutex);
-	if ( mSerial )
-	{
-		if (send_zeros)
-			setZeros();					// send zeros to all channels
-		
+
+	if(send_zeros){
+		//we set the zeroes
+		setZeros();
+		//wait a little bit so that we are sure it is sent
 		ci::sleep( mThreadSleepFor*2 );
-		mSerial->flush();	
-		
-		mSerial = std::shared_ptr<ci::Serial>();
-		ci::sleep(50);	
+	}
+
+	{
+		//lock it so we can get rid of the serial
+		std::lock_guard<std::mutex> dataLock(mDMXDataMutex);
+		if (mSerial){
+			mSerial->flush();
+			mSerial = std::shared_ptr<ci::Serial>();
+		}
 	}
 }
 
@@ -145,6 +149,7 @@ void DMXPro::setValue(int value, int channel)
 
 void DMXPro::setZeros()
 {
+	std::lock_guard<std::mutex> dataLock(mDMXDataMutex);
     for (int i=5; i < DMXPRO_PACKET_SIZE-2; i++)                        // DMX channels start form byte [5] and end at byte [DMXPRO_PACKET_SIZE-2], last byte is EOT(0xE7)
 		mDMXPacket[i] = 0;
     mNeedsSending = true;
